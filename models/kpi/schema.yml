@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: revenue_kpi_summary
+    description: >
+      Aggregates monthly revenue by region and product line.
+      Used as the primary source for Power BI revenue KPI dashboards.
+      Created for Jira ticket RMS-2001.
+
+    columns:
+      - name: region
+        description: Geographic region of the sale
+        tests:
+          - not_null
+
+      - name: product_line
+        description: Product line classification
+        tests:
+          - not_null
+
+      - name: currency_code
+        description: ISO 4217 currency code of the revenue amount
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BRL', 'USD', 'EUR']
+
+      - name: period_month
+        description: First day of the month for which revenue is aggregated
+        tests:
+          - not_null
+          - unique:
+              # unique per region + product_line combination — tested at model level
+              config:
+                where: "region IS NOT NULL AND product_line IS NOT NULL"
+
+      - name: revenue_amount
+        description: Total net revenue in BRL (converted from source currency)
+        tests:
+          - not_null

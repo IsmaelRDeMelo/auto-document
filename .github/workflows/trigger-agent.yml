@@ -2,11 +2,7 @@ name: Trigger Copilot Agent on PR
 
 on:
   pull_request:
-    types: [opened]
     branches: [main]
-    paths:
-      - "migrations/**"
-      - "models/**"
 
 jobs:
   assign-copilot:
@@ -46,7 +42,8 @@ jobs:
 
           echo "Copilot bot ID: $BOT_ID"
 
-          # Assign the PR to copilot-swe-agent
+          # Assign the PR (which is an Issue in GitHub's model) to copilot-swe-agent
+          # and pass customInstructions so Copilot knows to use the data-deploy-doc skill
           gh api graphql \
             -H "GraphQL-Features: issues_copilot_assignment_api_support" \
             -f query="
