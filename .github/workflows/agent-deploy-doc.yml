@@ -1,0 +1,89 @@
+name: Deploy Agent — Code Review & Documentation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit Tests (≥90% coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history required for git diff
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install msal requests python-dotenv pytest pytest-cov pytest-mock
+
+      - name: Run tests with coverage
+        run: pytest tests/ --cov=.github/skills/data-deploy/scripts --cov-report=term-missing --cov-fail-under=90
+
+  agent-deploy-doc:
+    name: Generate & Publish Deploy Document
+    runs-on: ubuntu-latest
+    needs: test  # Only runs if tests pass
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install msal requests python-dotenv
+
+      - name: Extract Jira ID from branch
+        id: jira
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          JIRA_ID=$(echo "$BRANCH" | grep -oP '[A-Z]+-\d+' | head -1)
+          if [ -z "$JIRA_ID" ]; then
+            echo "ERROR: Could not extract Jira ID from branch: $BRANCH"
+            exit 1
+          fi
+          echo "jira_id=$JIRA_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Get git diff
+        run: git diff origin/main...HEAD > /tmp/pr_diff.txt
+
+      - name: Invoke Copilot Agent to fill deploy template
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # GitHub Copilot Enterprise / Extensions agent call.
+          # The agent reads SKILL.md, pr_diff.txt, and template_deploy.md,
+          # then writes the filled document to /tmp/deploy_doc.md.
+          echo "Agent step: fill template (Copilot Enterprise call goes here)"
+          # Fallback: copy raw template for pipeline validation
+          cp .github/skills/data-deploy/template_deploy.md /tmp/deploy_doc.md
+
+      - name: Upload to SharePoint
+        id: sharepoint
+        env:
+          MS_GRAPH_TENANT_ID:     ${{ secrets.MS_GRAPH_TENANT_ID }}
+          MS_GRAPH_CLIENT_ID:     ${{ secrets.MS_GRAPH_CLIENT_ID }}
+          MS_GRAPH_CLIENT_SECRET: ${{ secrets.MS_GRAPH_CLIENT_SECRET }}
+          SHAREPOINT_SITE_ID:     ${{ secrets.SHAREPOINT_SITE_ID }}
+          SHAREPOINT_DRIVE_ID:    ${{ secrets.SHAREPOINT_DRIVE_ID }}
+        run: |
+          SP_URL=$(python .github/skills/data-deploy/scripts/sharepoint_tool.py \
+            "${{ github.head_ref }}" /tmp/deploy_doc.md)
+          echo "sharepoint_url=$SP_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Update Jira ticket
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL:    ${{ secrets.JIRA_EMAIL }}
+          JIRA_TOKEN:    ${{ secrets.JIRA_TOKEN }}
+        run: |
+          python .github/skills/data-deploy/scripts/jira_tool.py \
+            "${{ steps.jira.outputs.jira_id }}" \
+            "${{ steps.sharepoint.outputs.sharepoint_url }}"
