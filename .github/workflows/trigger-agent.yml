@@ -1,0 +1,64 @@
+name: Trigger Copilot Agent on PR
+
+on:
+  pull_request:
+    types: [opened]
+    branches: [main]
+    paths:
+      - "migrations/**"
+      - "models/**"
+
+jobs:
+  assign-copilot:
+    name: Assign Copilot to document this deploy
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Assign Copilot coding agent to this PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          PR_NODE_ID="${{ github.event.pull_request.node_id }}"
+          BRANCH="${{ github.head_ref }}"
+
+          # Resolve the Copilot bot ID from suggestedActors
+          BOT_ID=$(gh api graphql -f query="
+            query {
+              repository(owner: \"$OWNER\", name: \"$REPO\") {
+                suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 10) {
+                  nodes {
+                    login
+                    ... on Bot { id }
+                  }
+                }
+              }
+            }" \
+            --jq '.data.repository.suggestedActors.nodes[] | select(.login == "copilot-swe-agent") | .id')
+
+          if [ -z "$BOT_ID" ]; then
+            echo "::warning::Copilot coding agent is not enabled for this repository. Skipping."
+            exit 0
+          fi
+
+          echo "Copilot bot ID: $BOT_ID"
+
+          # Assign the PR to copilot-swe-agent
+          gh api graphql \
+            -H "GraphQL-Features: issues_copilot_assignment_api_support" \
+            -f query="
+              mutation {
+                addAssigneesToAssignable(input: {
+                  assignableId: \"$PR_NODE_ID\",
+                  assigneeIds: [\"$BOT_ID\"]
+                }) {
+                  assignable {
+                    ... on PullRequest { number title }
+                  }
+                }
+              }"
+
+          echo "Copilot assigned to PR #${{ github.event.pull_request.number }} on branch $BRANCH"
