@@ -6,7 +6,9 @@
 name: Copilot Setup Steps
 
 on:
-  workflow_dispatch:
+  pull_request:
+    types: [opened]
+    branches: [main]
 
 jobs:
   copilot-setup-steps:
