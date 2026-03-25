@@ -1,0 +1,38 @@
+Added short description of each change committed to branch
+--- /migrations/add_rms1025_table.sql	2024-01-15 10:00:00
++++ /migrations/add_rms1025_table.sql	2024-01-15 11:00:00
+@@ -0,0 +1,12 @@
++-- RMS-1025: Add KPI summary table
++CREATE TABLE IF NOT EXISTS ANALYTICS.PUBLIC.KPI_SUMMARY (
++    ID          NUMBER AUTOINCREMENT PRIMARY KEY,
++    METRIC_NAME VARCHAR(255) NOT NULL,
++    METRIC_VALUE FLOAT,
++    PERIOD_DATE DATE,
++    CREATED_AT  TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
++);
+--- /models/kpi/kpi_summary.sql	2024-01-15 10:00:00
++++ /models/kpi/kpi_summary.sql	2024-01-15 11:00:00
+@@ -0,0 +1,10 @@
++{{ config(materialized='table') }}
++
++SELECT
++    metric_name,
++    SUM(metric_value) AS total_value,
++    period_date
++FROM {{ ref('raw_metrics') }}
++GROUP BY metric_name, period_date
+--- /models/kpi/schema.yml	2024-01-15 10:00:00
++++ /models/kpi/schema.yml	2024-01-15 11:00:00
+@@ -0,0 +1,14 @@
++version: 2
++models:
++  - name: kpi_summary
++    description: Aggregated KPI metrics by period
++    columns:
++      - name: metric_name
++        tests:
++          - not_null
++          - unique
++      - name: total_value
++        tests:
++          - not_null
